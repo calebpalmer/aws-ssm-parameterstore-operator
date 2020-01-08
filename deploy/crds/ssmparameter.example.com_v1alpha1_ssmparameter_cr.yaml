@@ -1,0 +1,7 @@
+apiVersion: ssmparameter.example.com/v1alpha1
+kind: SSMParameter
+metadata:
+  name: example-ssmparameter
+spec:
+  # Add fields here
+  size: 3

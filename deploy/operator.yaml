@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aws-ssm-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: aws-ssm-operator
+  template:
+    metadata:
+      labels:
+        name: aws-ssm-operator
+    spec:
+      serviceAccountName: aws-ssm-operator
+      containers:
+        - name: aws-ssm-operator
+          # Replace this with the built image name
+          image: localhost:32000/ssmparameter-operator
+          command:
+          - aws-ssm-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "aws-ssm-operator"
+            - name: AWS_REGION
+              value: "REGION1"
+            - name: AWS_ACCESS_KEY_ID
+              value: "ACCESSKEYID"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "SECRETKEY"
