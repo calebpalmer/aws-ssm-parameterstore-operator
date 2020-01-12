@@ -33,6 +33,6 @@ spec:
             - name: AWS_REGION
               value: "ca-central-1"
             - name: AWS_ACCESS_KEY_ID
-              value: "AKIAYR6GAC6E3NRSPHAL"
+              value: "AWS ACCESS KEY ID"
             - name: AWS_SECRET_ACCESS_KEY
-              value: "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"
+              value: "AWS SECRET KEY"
