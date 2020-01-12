@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"time"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -9,9 +10,10 @@ import (
 
 // SSMParameterSpec defines the desired state of SSMParameter
 type SSMParameterSpec struct {
-	Path    string `json:"path"`
-	Name    string `json:"name"`
-	Decrypt bool   `json:"decrypt"`
+	Path           string        `json:"path"`
+	Name           string        `json:"name"`
+	Decrypt        bool          `json:"decrypt"`
+	UpdateInterval time.Duration `json:"updateInterval,omitempty"`
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html

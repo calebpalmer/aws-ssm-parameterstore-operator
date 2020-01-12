@@ -18,11 +18,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"encoding/base64"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"os"
+	"time"
 )
 
 var log = logf.Log.WithName("controller_ssmparameter")
@@ -88,9 +90,11 @@ type ReconcileSSMParameter struct {
 func (r *ReconcileSSMParameter) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 
-	// Fetch the SSMParameter instance
-	instance := &ssmparameterv1alpha1.SSMParameter{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	errorRequeueTimeSec := 5 * time.Second
+
+	// Fetch the SSMParameter ssmParamater
+	ssmParameter := &ssmparameterv1alpha1.SSMParameter{}
+	err := r.client.Get(context.TODO(), request.NamespacedName, ssmParameter)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -99,27 +103,27 @@ func (r *ReconcileSSMParameter) Reconcile(request reconcile.Request) (reconcile.
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		return reconcile.Result{}, err
+		return reconcile.Result{Requeue: true}, err
 	}
 
 	// log some stuff
-	msg := fmt.Sprintf("Reconciling SSMParameter with path %s", instance.Spec.Path)
+	msg := fmt.Sprintf("Reconciling SSMParameter with path %s", ssmParameter.Spec.Path)
 	reqLogger.Info(msg)
 
 	// get the secret value
 	if err != nil {
 		reqLogger.Error(err, "Error reading SSM Parameter Value")
-		return reconcile.Result{}, err
+		return reconcile.Result{RequeueAfter: errorRequeueTimeSec}, err
 	}
 
 	// Check if this Secret already exists
-	found := &corev1.Secret{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.Name, Namespace: request.Namespace}, found)
+	secret := &corev1.Secret{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: ssmParameter.Spec.Name, Namespace: request.Namespace}, secret)
 	if err != nil && errors.IsNotFound(err) {
 		// create the secret
-		secret, err := r.secretForSSMParameter(instance, request.Namespace)
+		secret, err := r.secretForSSMParameter(ssmParameter, request.Namespace)
 		if err != nil {
-			return reconcile.Result{}, err
+			return reconcile.Result{RequeueAfter: errorRequeueTimeSec}, err
 		}
 
 		reqLogger.Info("Creating a new Secret", "Deployment.Namespace", "", "Deployment.Name", "")
@@ -127,39 +131,58 @@ func (r *ReconcileSSMParameter) Reconcile(request reconcile.Request) (reconcile.
 		err = r.client.Create(context.TODO(), secret)
 		if err != nil {
 			reqLogger.Error(err, "Failed to create new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
-			return reconcile.Result{}, err
+			return reconcile.Result{RequeueAfter: errorRequeueTimeSec}, err
 		}
 
-		// Secret created successfully - return and requeue
-		return reconcile.Result{}, nil
+	} else {
+		reqLogger.Info(fmt.Sprintf("Secret %s already exists. Updating", ssmParameter.Spec.Name))
+		err := r.updateSecret(ssmParameter, secret)
+		if err != nil {
+			reqLogger.Error(err, "Failed to update Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+			return reconcile.Result{RequeueAfter: errorRequeueTimeSec}, err
+		}
+
 	}
 
-	return reconcile.Result{}, nil
+	// Secret created/updated successfully - return and requeue
+	if ssmParameter.Spec.UpdateInterval == 0 {
+		return reconcile.Result{}, nil
+	} else {
+		return reconcile.Result{RequeueAfter: ssmParameter.Spec.UpdateInterval * time.Second}, nil
+	}
 }
 
 // secretForSSMParameter returns a Secret object for an SSM Parameter value.
 func (r *ReconcileSSMParameter) secretForSSMParameter(param *ssmparameterv1alpha1.SSMParameter, namespace string) (*corev1.Secret, error) {
-	// get the secret value
-	value, err := r.readSSMParameter(param.Spec.Path, param.Spec.Decrypt)
-	if err != nil {
-		return nil, err
-	}
-
-	// make the secret
-	stringData := make(map[string]string)
-	stringData["value"] = value
-
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      param.Spec.Name,
 			Namespace: namespace,
 		},
-		StringData: stringData,
+		Data: make(map[string][]byte),
+	}
+
+	err := r.updateSecret(param, secret)
+	if err != nil {
+		return nil, err
 	}
 
 	// Set SSMParameter instance as the owner and controller
 	controllerutil.SetControllerReference(param, secret, r.scheme)
 	return secret, nil
+}
+
+// updateSecret updates the secret data with the given SSMParameter(s)
+func (r *ReconcileSSMParameter) updateSecret(param *ssmparameterv1alpha1.SSMParameter, secret *corev1.Secret) error {
+	// get the secret value
+	value, err := r.readSSMParameter(param.Spec.Path, param.Spec.Decrypt)
+	if err != nil {
+		return err
+	}
+
+	encoded := []byte(base64.StdEncoding.EncodeToString([]byte(value)))
+	secret.Data["value"] = encoded
+	return nil
 }
 
 // makeSSMSession creates and returns an AWS SSM session.

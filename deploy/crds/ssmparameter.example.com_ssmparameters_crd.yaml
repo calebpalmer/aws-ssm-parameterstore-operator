@@ -37,6 +37,8 @@ spec:
               type: string
             path:
               type: string
+            updateInterval:
+              type: integer
           required:
           - decrypt
           - name

@@ -15,8 +15,7 @@ spec:
       serviceAccountName: aws-ssm-operator
       containers:
         - name: aws-ssm-operator
-          # Replace this with the built image name
-          image: localhost:32000/ssmparameter-operator
+          image: calebpalmer/ssmparameter-operator
           command:
           - aws-ssm-operator
           imagePullPolicy: Always
@@ -32,8 +31,8 @@ spec:
             - name: OPERATOR_NAME
               value: "aws-ssm-operator"
             - name: AWS_REGION
-              value: "REGION1"
+              value: "ca-central-1"
             - name: AWS_ACCESS_KEY_ID
-              value: "ACCESSKEYID"
+              value: "AKIAYR6GAC6E3NRSPHAL"
             - name: AWS_SECRET_ACCESS_KEY
-              value: "SECRETKEY"
+              value: "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"
