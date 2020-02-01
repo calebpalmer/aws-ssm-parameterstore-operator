@@ -24,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -175,13 +176,16 @@ func (r *ReconcileSSMParameter) secretForSSMParameter(param *ssmparameterv1alpha
 // updateSecret updates the secret data with the given SSMParameter(s)
 func (r *ReconcileSSMParameter) updateSecret(param *ssmparameterv1alpha1.SSMParameter, secret *corev1.Secret) error {
 	// get the secret value
-	value, err := r.readSSMParameter(param.Spec.Path, param.Spec.Decrypt)
+	parameterMap, err := r.readSSMParameter(param.Spec.Path, param.Spec.Decrypt)
 	if err != nil {
 		return err
 	}
 
-	encoded := []byte(base64.StdEncoding.EncodeToString([]byte(value)))
-	secret.Data["value"] = encoded
+	for key, value := range parameterMap {
+		encoded := []byte(base64.StdEncoding.EncodeToString([]byte(value)))
+		secret.Data[key] = encoded
+	}
+
 	return nil
 }
 
@@ -206,16 +210,60 @@ func makeSSMSession() *ssm.SSM {
 	return ssm.New(sess)
 }
 
+func ssmPathToKey(ssmPath *string) string {
+	return strings.Replace(*ssmPath, "/", ".", -1)
+}
+
 // readSSMParameter reads and returns the value for a given AWS Systems Manager Parameter Store.
-func (r *ReconcileSSMParameter) readSSMParameter(name string, decrypt bool) (string, error) {
-	parm, err := r.ssmService.GetParameter(&ssm.GetParameterInput{
-		Name:           &name,
-		WithDecryption: &decrypt,
-	})
+func (r *ReconcileSSMParameter) readSSMParameter(name string, decrypt bool) (map[string]string, error) {
+	m := make(map[string]string)
 
-	if err != nil {
-		return "", err
+	recurse := false
+
+	if name[len(name)-1:] == "/" {
+		// This is a path so get a set of parameters
+		input := ssm.GetParametersByPathInput{
+			Path:           &name,
+			Recursive:      &recurse,
+			WithDecryption: &decrypt,
+		}
+		parms, err := r.ssmService.GetParametersByPath(&input)
+		if err != nil {
+			return m, err
+		}
+
+		for _, parm := range parms.Parameters {
+			m[ssmPathToKey(parm.Name)] = *parm.Value
+		}
+
+		nextToken := parms.NextToken
+		for nextToken != nil {
+			parms, err := r.ssmService.GetParametersByPath(&input)
+			if err != nil {
+				return m, err
+			}
+
+			for _, parm := range parms.Parameters {
+				m[ssmPathToKey(parm.Name)] = *parm.Value
+			}
+			nextToken = parms.NextToken
+		}
+
+		return m, nil
+
+	} else {
+		// single parameter
+		parm, err := r.ssmService.GetParameter(&ssm.GetParameterInput{
+			Name:           &name,
+			WithDecryption: &decrypt,
+		})
+
+		if err != nil {
+			return m, err
+		}
+
+		m[ssmPathToKey(parm.Parameter.Name)] = *parm.Parameter.Value
+		return m, nil
+
 	}
-
-	return *parm.Parameter.Value, nil
 }
