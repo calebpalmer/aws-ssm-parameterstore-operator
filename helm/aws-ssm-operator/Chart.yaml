@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aws-ssm-operator
+description: A Operator for creating Secrets from AWS Systems Manager Parameter Store.
+type: application
+version: 0.1.0
+appVersion: 0.1.0
